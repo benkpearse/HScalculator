@@ -3,21 +3,24 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import plotly.express as px
-import difflib  # For fuzzy matching names
+import difflib # Restored for fuzzy matching
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Strategic ROI Calculator", layout="wide", page_icon="🇬🇧")
+st.set_page_config(page_title="Strategic ROI Calculator", layout="wide", page_icon="💼")
 
 # --- CUSTOM CSS FOR POLISH ---
 st.markdown("""
     <style>
     .big-font { font-size:24px !important; font-weight: bold; }
-    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; }
-    .stAlert { padding: 10px; border-radius: 5px; }
+    .stMetric { background-color: #f8f9fa; border: 1px solid #e9ecef; }
+    .success-box { padding: 15px; background-color: #d4edda; color: #155724; border-radius: 5px; margin-bottom: 10px; }
+    .error-box { padding: 15px; background-color: #f8d7da; color: #721c24; border-radius: 5px; margin-bottom: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. HARDCODED PRICE BOOK (UK DATA) ---
+# --- 1. HARDCODED PRICE BOOK ---
+# Using the list you provided. 
+# Note: We assume Year 2 Price = Year 1 Price for this model since Y2 data wasn't provided yet.
 PRICE_CATALOG = {
     # Standard Items
     "Plumbing and Drainage Plus": 12.00,
@@ -39,254 +42,277 @@ PRICE_CATALOG = {
     "Landlord’s Heating, Plumbing and Electrics": 246.00,
     "Landlord’s Heating, Plumbing and Electrics Plus": 270.00,
     "Landlord’s Gas Safety Certificate": 108.00,
-    # Promotions
+    # Promotions (Appended 'Promo' to differentiate duplicate keys)
     "Plumbing and Drainage Plus (Promo)": 6.00,
     "Plumbing and Electrics (Promo)": 42.00,
     "Landlord's Plumbing and Drainage Plus (Promo)": 6.00,
     "Landlord’s Plumbing and Electrics (Promo)": 66.00
 }
 
+# --- HELPER: FUZZY PARSING LOGIC ---
+def parse_paste_data(raw_text):
+    """
+    Parses pasted text, finds prices, and handles typos using fuzzy matching.
+    """
+    parsed_rows = []
+    if not raw_text: return pd.DataFrame()
+    
+    lines = raw_text.strip().split('\n')
+    for line in lines:
+        # Split logic (Tab, Comma, or Space)
+        if '\t' in line: parts = line.split('\t')
+        elif ',' in line: parts = line.split(',')
+        else: parts = line.rsplit(' ', 1)
+
+        if len(parts) >= 2:
+            p_name = parts[0].strip()
+            # Clean number string (remove £, commas)
+            p_count_str = parts[1].strip().replace(',', '').replace('£', '')
+            try: p_count = float(p_count_str)
+            except: p_count = 0
+            
+            # --- INTELLIGENT MATCHING ---
+            matched_price = 0
+            status = "⚠️ Price Not Found"
+            match_name = p_name
+
+            # 1. Exact Match
+            if p_name in PRICE_CATALOG:
+                matched_price = PRICE_CATALOG[p_name]
+                status = "✅ Exact"
+            else:
+                # 2. Case Insensitive
+                found = False
+                for cat_name, cat_price in PRICE_CATALOG.items():
+                    if p_name.lower() == cat_name.lower():
+                        matched_price = cat_price
+                        match_name = cat_name
+                        status = "✅ Exact (Case Fixed)"
+                        found = True
+                        break
+                
+                # 3. Fuzzy Match (The "Typo Fixer")
+                if not found:
+                    # Look for closest string match in catalog
+                    matches = difflib.get_close_matches(p_name, PRICE_CATALOG.keys(), n=1, cutoff=0.6)
+                    if matches:
+                        match_name = matches[0]
+                        matched_price = PRICE_CATALOG[match_name]
+                        status = f"⚡ Fuzzy Match: {match_name}"
+            
+            parsed_rows.append({
+                "Original Input": p_name,
+                "Matched Policy": match_name,
+                "Count": p_count,
+                "Price": matched_price,
+                "Status": status
+            })
+            
+    return pd.DataFrame(parsed_rows)
+
 # --- HEADER & ONBOARDING ---
 st.title("💼 Strategy Impact & ROI Calculator")
-st.markdown("### From Product Mix to Bottom Line Profit")
+st.markdown("### Evaluate the financial impact of A/B tests across multiple variants.")
 
-# --- "HOW TO USE" SECTION ---
-with st.expander("📘 Start Here: How to use this calculator", expanded=True):
+with st.expander("📘 **Start Here: How to use this tool**", expanded=True):
     st.markdown("""
-    **Goal:** Calculate the true financial impact of your A/B test by accounting for the specific products users bought.
+    **Who is this for?** Executives and Strategy Leads.
+    **What does it do?** It tells you if your new strategy makes money, even if the conversion rate looks different.
     
-    1.  **Step 1: Paste Your Data (Section 1)**
-        * Copy two columns from your Excel report: **Product Name** and **Sales Count**.
-        * Paste them into the box below. The app will automatically find the prices.
-    2.  **Step 2: Set The Context (Sidebar)**
-        * Input your traffic volume and project costs.
-    3.  **Step 3: Analyze Results (Section 2)**
-        * Input the Conversion Rates from your test.
-        * Check the **Executive Summary** to see if the project is profitable.
+    1.  **Define Variants (Sidebar):** Select how many test groups you had (e.g., Control + Variant 1).
+    2.  **Paste Data (Tabs):** For each tab, copy the product mix (Name | Count) directly from Excel and paste it in.
+    3.  **Check the Match:** The tool uses AI logic to fix typos (e.g., "Gas Blr" -> "Gas Boiler").
+    4.  **Review Results:** Scroll down to the Executive Summary for the final recommendation.
     """)
 
 # --- SIDEBAR: SETTINGS & GLOSSARY ---
 with st.sidebar:
-    st.header("⚙️ Simulation Settings")
+    st.header("⚙️ Global Settings")
     
-    st.subheader("1. Traffic Volume")
-    traffic = st.number_input("Total Visitors", value=10000, step=1000, 
-                             help="Total number of visitors in the test group (or monthly traffic).")
+    # Dynamic Variants
+    num_variants = st.number_input("Number of New Variants", min_value=1, max_value=5, value=1, 
+                                  help="How many different versions did you test against the Control?")
+    variant_names = [f"Variant {i+1}" for i in range(num_variants)]
     
-    st.subheader("2. Investment")
+    st.divider()
+    st.subheader("Market Assumptions")
+    traffic = st.number_input("Traffic per Variant", value=10000, step=1000, 
+                             help="How many visitors were in each group?")
     cost = st.number_input("Implementation Cost (£)", value=5000, step=500,
-                          help="Total cost to build/market this feature.")
-    
+                          help="Total cost to build/market this strategy.")
+    retention = st.slider("Year 2 Renewal Rate", 50, 95, 80, format="%d%%",
+                         help="% of customers who renew next year.") / 100.0
+
     st.divider()
-    
-    st.subheader("3. Retention Assumptions")
-    st.caption("We assume Year 2 Price = Year 1 Price.")
-    retention_rate = st.slider("Year 2 Renewal Rate", 50, 95, 80, format="%d%%",
-                              help="Percentage of customers who renew the policy for a second year.") / 100.0
-    
-    st.divider()
-    st.subheader("📚 Glossary")
+    st.markdown("### 📚 Glossary")
     st.markdown("""
-    * **Blended ARPU:** Average Revenue Per User, weighted by the mix of products sold.
-    * **LTV (Lifetime Value):** Total value of a customer over 2 years (Acquisition + Renewal).
-    * **Break-Even:** The conversion rate required to pay back the initial cost.
+    * **LTV (Lifetime Value):** Total cash value of one customer over 2 years.
+    * **Blended Price:** The average price paid, accounting for the mix of cheap vs. expensive products.
+    * **ROI:** Return on Investment. (Net Profit / Cost).
     """)
 
-# --- SECTION 1: PRODUCT MIX INPUT ---
-st.header("1. The Product Mix")
-st.info("👇 **Action:** Copy your product mix from Excel and paste it below to calculate your Blended Price.")
+# --- SECTION 1: PRODUCT MIX INPUTS ---
+st.header("1. Input Test Data")
+st.info("Paste your Excel data below. We automatically clean typos and look up prices.")
 
-col_paste, col_preview = st.columns([1, 1])
+tabs = st.tabs(["🅰️ Control Group"] + [f"🅱️ {v}" for v in variant_names])
+results_data = {} 
 
-with col_paste:
-    st.markdown("##### Paste Excel Data Here (Name | Count)")
-    placeholder = "Example:\nPlumbing and Drainage Plus\t50\nGas Boiler\t20"
-    raw_data = st.text_area("Data Input", height=300, placeholder=placeholder, label_visibility="collapsed")
+# --- TAB LOGIC (Iterate through Control + Variants) ---
+all_groups = ["Control"] + variant_names
 
-# --- PARSING LOGIC ---
-parsed_rows = []
-total_sales_count = 0
-
-if raw_data:
-    lines = raw_data.strip().split('\n')
-    for line in lines:
-        # Flexible splitter: Tab (Excel default), Comma (CSV), or Pipe
-        if '\t' in line: parts = line.split('\t')
-        elif ',' in line: parts = line.split(',')
-        else: parts = line.rsplit(' ', 1) # Fallback
-
-        if len(parts) >= 2:
-            p_name = parts[0].strip()
-            # Clean number string (remove currency symbols or commas)
-            p_count_str = parts[1].strip().replace(',', '').replace('£', '')
+for i, group_name in enumerate(all_groups):
+    with tabs[i]:
+        col_input, col_check, col_metrics = st.columns([1.5, 2, 1])
+        
+        # 1. INPUT
+        with col_input:
+            st.markdown(f"**Paste {group_name} Mix** (Name | Count)")
+            raw_paste = st.text_area(f"Input for {group_name}", height=200, key=f"paste_{group_name}", 
+                                    placeholder="Plumbing...\t50\nGas Boiler\t20")
             
-            try:
-                p_count = float(p_count_str)
-            except ValueError:
-                p_count = 0
-            
-            # PRICE LOOKUP
-            matched_price = 0
-            status = "⚠️ Price Not Found"
-            
-            # Exact match check
-            if p_name in PRICE_CATALOG:
-                matched_price = PRICE_CATALOG[p_name]
-                status = "✅ Found"
-            else:
-                # Case insensitive check
-                for cat_name, cat_price in PRICE_CATALOG.items():
-                    if p_name.lower() == cat_name.lower():
-                        matched_price = cat_price
-                        p_name = cat_name # Use correct casing
-                        status = "✅ Found"
-                        break
-            
-            parsed_rows.append({
-                "Policy Name": p_name,
-                "Sales Count": p_count,
-                "Price (£)": matched_price,
-                "Status": status
-            })
-            total_sales_count += p_count
+            # Conversion Rate Input for this group
+            cr_val = st.number_input(f"{group_name} Conversion Rate (%)", value=2.0 if i==0 else 2.2, 
+                                    format="%.2f", key=f"cr_{group_name}", 
+                                    help="The final conversion rate observed in the test.") / 100
 
-# Create DataFrame
-if parsed_rows:
-    df = pd.DataFrame(parsed_rows)
-else:
-    df = pd.DataFrame(columns=["Policy Name", "Sales Count", "Price (£)", "Status"])
+        # 2. PROCESSING
+        df = parse_paste_data(raw_paste)
+        
+        if not df.empty:
+            # Calculate Mix & LTV
+            total_sales = df["Count"].sum()
+            df["Mix %"] = df["Count"] / total_sales
+            
+            # LTV Calculation: Year 1 Price + (Year 1 Price * Retention)
+            # (Assuming Y2 Price = Y1 Price as per instructions)
+            df["Item LTV"] = df["Price"] + (df["Price"] * retention)
+            
+            # Blended Metrics
+            blended_ltv = (df["Item LTV"] * df["Mix %"]).sum()
+            avg_y1 = (df["Price"] * df["Mix %"]).sum()
+            
+            total_revenue = traffic * cr_val * blended_ltv
+            
+            # Store for Comparison
+            results_data[group_name] = {
+                "CR": cr_val,
+                "LTV": blended_ltv,
+                "Revenue": total_revenue,
+                "AvgPrice": avg_y1
+            }
 
-# --- DISPLAY & CALCS ---
-if not df.empty and total_sales_count > 0:
-    # 1. Calculate Weights
-    df["Mix %"] = df["Sales Count"] / total_sales_count
+            # 3. DATA PREVIEW (With Status Checks)
+            with col_check:
+                st.markdown("**Data Validation**")
+                st.dataframe(
+                    df[["Matched Policy", "Count", "Price", "Status"]],
+                    column_config={
+                        "Price": st.column_config.NumberColumn(format="£%.2f"),
+                        "Status": st.column_config.TextColumn(help="Did we find the price in the catalog?"),
+                    },
+                    hide_index=True,
+                    height=200,
+                    use_container_width=True
+                )
+                # Warn about zeros
+                if (df["Price"] == 0).any():
+                    st.warning("⚠️ Some items have £0 price. Check for spelling errors in the 'Status' column.")
+
+            # 4. INSTANT METRICS
+            with col_metrics:
+                st.markdown("**Group Performance**")
+                st.metric("Blended LTV", f"£{blended_ltv:.2f}", help="Avg value per customer (2 Years)")
+                st.metric("Proj. Revenue", f"£{total_revenue:,.0f}", help="Traffic x CR x LTV")
+        
+        else:
+            with col_check:
+                st.info(f"👈 Waiting for data for {group_name}...")
+
+# --- SECTION 2: EXECUTIVE SUMMARY ---
+if "Control" in results_data and len(results_data) > 1:
+    st.divider()
+    st.header("2. Executive Summary & Recommendation")
     
-    # 2. Calculate LTV (Year 2 Price = Year 1 Price)
-    # LTV = Price + (Price * Retention)
-    df["LTV Contribution"] = df["Price (£)"] + (df["Price (£)"] * retention_rate)
+    # Find the winner
+    best_variant = max(results_data, key=lambda x: results_data[x]['Revenue'] if x != 'Control' else -1)
     
-    # 3. Weighted Averages
-    avg_price = (df["Price (£)"] * df["Mix %"]).sum()
-    blended_ltv = (df["LTV Contribution"] * df["Mix %"]).sum()
+    base_rev = results_data["Control"]["Revenue"]
+    best_rev = results_data[best_variant]["Revenue"]
+    incremental = best_rev - base_rev
+    net_profit = incremental - cost
+    roi = (net_profit / cost) * 100 if cost > 0 else 0
+    
+    # 1. THE NARRATIVE
+    if net_profit > 0:
+        st.markdown(f"""
+        <div class="success-box">
+            <h3 style="margin:0">✅ Recommendation: Implement {best_variant}</h3>
+            <p style="margin:0">This strategy is projected to generate <b>£{net_profit:,.0f}</b> in pure profit over 2 years. 
+            The ROI is <b>{roi:.0f}%</b>.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+         st.markdown(f"""
+        <div class="error-box">
+            <h3 style="margin:0">⚠️ Recommendation: Do Not Roll Out</h3>
+            <p style="margin:0">Even though {best_variant} might have different metrics, after accounting for costs, 
+            it is projected to <b>lose £{abs(net_profit):,.0f}</b>.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    with col_preview:
-        st.markdown("##### Recognized Product Mix")
-        st.dataframe(
-            df[["Policy Name", "Sales Count", "Price (£)", "Status"]],
-            column_config={
-                "Price (£)": st.column_config.NumberColumn(format="£%.2f"),
-                "Sales Count": st.column_config.NumberColumn(format="%d"),
-            },
-            hide_index=True,
-            use_container_width=True
+    # 2. COMPARISON TABLE
+    st.subheader("Detailed Comparison")
+    
+    comp_data = []
+    for name, data in results_data.items():
+        is_control = name == "Control"
+        inc_rev = data["Revenue"] - base_rev
+        profit = inc_rev - cost if not is_control else 0
+        roi_val = (profit / cost * 100) if (not is_control and cost > 0) else 0
+        
+        comp_data.append({
+            "Strategy": name,
+            "Conv. Rate": f"{data['CR']*100:.2f}%",
+            "Blended LTV": f"£{data['LTV']:.2f}",
+            "Total Revenue": f"£{data['Revenue']:,.0f}",
+            "Net Profit (vs Control)": f"£{profit:,.0f}" if not is_control else "-",
+            "ROI": f"{roi_val:.0f}%" if not is_control else "-"
+        })
+        
+    st.table(pd.DataFrame(comp_data))
+
+    # 3. VISUALIZATION
+    col_chart, col_be = st.columns([2, 1])
+    
+    with col_chart:
+        st.subheader("Revenue Projection (2-Year)")
+        chart_df = pd.DataFrame([{"Group": k, "Revenue": v["Revenue"]} for k,v in results_data.items()])
+        fig = px.bar(chart_df, x="Group", y="Revenue", color="Group", text_auto='.2s')
+        st.plotly_chart(fig, use_container_width=True)
+        
+    with col_be:
+        st.subheader("Break-Even Target")
+        # Calc break even CR for the Cost
+        # Revenue_New = Revenue_Old + Cost
+        # Traffic * CR_New * LTV_New = Rev_Old + Cost
+        # CR_New = (Rev_Old + Cost) / (Traffic * LTV_New)
+        # Note: We use the *Variant's* LTV to calculate the target, because that's the mix we would be selling.
+        
+        target_cr = (base_rev + cost) / (traffic * results_data[best_variant]["LTV"])
+        current_cr = results_data[best_variant]["CR"]
+        
+        st.metric(
+            "Required Conv. Rate", 
+            f"{target_cr*100:.2f}%",
+            delta=f"{current_cr*100 - target_cr*100:.2f} pts vs actual",
+            help=f"To pay back the £{cost} cost, {best_variant} must hit this conversion rate."
         )
         
-        # Error handling for typos
-        unknowns = df[df["Status"].str.contains("Not Found")]
-        if not unknowns.empty:
-            st.warning(f"⚠️ Warning: Could not find pricing for {len(unknowns)} items. They are calculated as £0.")
-
-    # 4. Unit Economics Display
-    st.divider()
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Avg. Year 1 Revenue", f"£{avg_price:.2f}", help="Weighted average price based on the mix above.")
-    m2.metric("Blended LTV (2-Year)", f"£{blended_ltv:.2f}", help="Includes Year 1 + (Year 2 * Retention Rate)")
-    m3.caption(f"**Note:** This LTV assumes a {retention_rate*100:.0f}% renewal rate for Year 2.")
-
-    # --- SECTION 2: PERFORMANCE ---
-    st.header("2. Performance & Financials")
-    
-    c1, c2, c3 = st.columns(3)
-    
-    with c1:
-        st.markdown("#### 🅰️ Baseline Strategy")
-        cv_control = st.number_input("Current Conversion Rate (%)", value=2.0, format="%.2f") / 100
-        rev_control = traffic * cv_control * blended_ltv
-        
-    with c2:
-        st.markdown("#### 🅱️ New Strategy")
-        cv_variant = st.number_input("New Conversion Rate (%)", value=2.2, format="%.2f") / 100
-        rev_variant = traffic * cv_variant * blended_ltv
-        
-    # Break Even Math
-    be_revenue_target = rev_control + cost
-    be_cr = be_revenue_target / (traffic * blended_ltv) if (traffic * blended_ltv) > 0 else 0
-    be_lift_needed = (be_cr - cv_control) / cv_control
-    
-    with c3:
-        st.markdown("#### 🎯 The Target")
-        if be_cr > 1.0:
-             st.error("Cost is too high to break even.")
+        if current_cr >= target_cr:
+            st.caption("✅ You are above the break-even point.")
         else:
-            st.markdown(f"To cover the **£{cost:,}** cost, you need:")
-            st.metric(
-                "Break-Even Conv. Rate", 
-                f"{be_cr*100:.2f}%", 
-                delta=f"{be_lift_needed:.1%} lift needed",
-                delta_color="inverse",
-                help="If your New Strategy is below this number, you are losing money."
-            )
-
-    # --- EXECUTIVE SUMMARY ---
-    st.divider()
-    st.subheader("🚀 Executive Summary")
-    
-    incremental_val = rev_variant - rev_control
-    roi = ((incremental_val - cost) / cost) * 100 if cost > 0 else 0
-    net_profit = incremental_val - cost
-    
-    # Dynamic Storytelling
-    if net_profit > 0:
-        st.success(f"✅ **Green Light:** This strategy is projected to generate **£{net_profit:,.0f}** in pure profit over 2 years.")
-    else:
-        st.error(f"⚠️ **Caution:** This strategy is projected to **lose £{abs(net_profit):,.0f}**. The lift in conversion is not enough to cover the implementation costs.")
-        
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Incremental Revenue", f"£{incremental_val:,.0f}", help="Total extra cash generated vs the old strategy.")
-    k2.metric("Return on Investment (ROI)", f"{roi:.0f}%", help="Net Profit / Cost.")
-    k3.metric("Net Profit", f"£{net_profit:,.0f}", help="Revenue minus Costs.")
-
-    # --- SECTION 3: RISK SIMULATOR ---
-    st.divider()
-    st.header("🎲 Risk & Confidence Analysis")
-    st.markdown("Real life isn't a single number. This tool simulates **1,000 scenarios** to see if your strategy is safe.")
-    
-    if st.button("Run Risk Simulation"):
-        with st.spinner("Simulating 1,000 futures..."):
-            sims = 1000
-            volatility = 0.10 # 10% variance
-            
-            # Randomized Inputs
-            sim_cv = np.random.normal(cv_variant, cv_variant * volatility, sims)
-            sim_retention = np.random.normal(retention_rate, retention_rate * 0.05, sims) # Less volatile
-            
-            # Randomized LTV
-            sim_ltv = avg_price + (avg_price * sim_retention)
-            
-            # Randomized Profit
-            sim_rev = traffic * sim_cv * sim_ltv
-            baseline = traffic * cv_control * blended_ltv
-            sim_profit = (sim_rev - baseline) - cost
-            
-            # Stats
-            wins = np.sum(sim_profit > 0)
-            win_rate = (wins / sims) * 100
-            
-            r1, r2 = st.columns([1, 2])
-            with r1:
-                st.markdown(f"### Probability of Profit: :blue[{win_rate:.1f}%]")
-                if win_rate > 80: st.success("Analysis: Low Risk.")
-                elif win_rate > 50: st.warning("Analysis: Moderate Risk.")
-                else: st.error("Analysis: High Risk.")
-                
-            with r2:
-                fig = px.histogram(x=sim_profit, nbins=30, title="Profit/Loss Distribution", color_discrete_sequence=['#00CC96'])
-                fig.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Break Even")
-                fig.update_layout(xaxis_title="Net Profit (£)", showlegend=False, height=300)
-                st.plotly_chart(fig, use_container_width=True)
+            st.caption("❌ You are below the break-even point.")
 
 else:
-    # Empty State Message
-    st.info("👈 **Waiting for data:** Paste your product mix on the left to unlock the calculator.")
-    with st.expander("Show Valid Product List (Reference)"):
-        st.json(PRICE_CATALOG)
+    st.warning("waiting for inputs...")
