@@ -317,7 +317,7 @@ if "Control" in group_inputs and len(group_inputs) > 1:
                 <li><b>Break Even:</b> Pays back cost in Month {break_even_month}</li>
             </ul>
         </div>""", unsafe_allow_html=True)
-            else:
+        else:
         st.markdown(f"""
         <div class='error-box'>
             <h3 style='margin:0'>🛑 Not Recommended</h3>
