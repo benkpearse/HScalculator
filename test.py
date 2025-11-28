@@ -28,7 +28,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 1. HARDCODED PRICE BOOK (Base Prices) ---
+# --- 1. HARDCODED PRICE BOOK ---
 PRICE_CATALOG = {
     "Plumbing and Drainage Plus": 12.00,
     "Plumbing and Electrics": 48.00,
@@ -100,7 +100,7 @@ with st.expander("📘 **Start Here: Quick Guide**", expanded=True):
     
     1.  **Configure (Sidebar):** Select your Mode (Marketing vs Finance) and set project costs.
     2.  **Input Data (Tabs):** Paste your product mix (Name | Count) for each group.
-    3.  **Review (Bottom):** See the Executive Summary and Revenue Decay Charts.
+    3.  **Review (Bottom):** See the Executive Summary, Revenue Decay Charts, and Risk Simulation.
     """)
 
 # --- SIDEBAR: RESTRUCTURED LOGIC ---
@@ -247,8 +247,6 @@ if "Control" in group_inputs and len(group_inputs) > 1:
     control_data = group_inputs["Control"]
     
     # 1. Baseline (Control) Revenue Stream
-    # Control assumes 0 decay (it is the baseline)
-    # Rev = Traffic * CR * LTV
     control_monthly_rev = traffic_monthly * control_data["CR_Initial"] * control_data["LTV_Per_User"]
     control_total_rev = control_monthly_rev * months
 
@@ -309,6 +307,10 @@ if "Control" in group_inputs and len(group_inputs) > 1:
                 <li><b>ROI:</b> {best_res['ROI']:.0f}%</li>
             </ul>
         </div>""", unsafe_allow_html=True)
+        
+
+[Image of Financial Dashboard]
+
     else:
         st.markdown(f"""
         <div class='error-box'>
@@ -353,6 +355,62 @@ if "Control" in group_inputs and len(group_inputs) > 1:
         st.dataframe(summary_df[["Group", "Total Rev", "Net Profit", "ROI"]].style.format({
             "Total Rev": "£{:,.0f}", "Net Profit": "£{:,.0f}", "ROI": "{:.0f}%"
         }), use_container_width=True, hide_index=True)
+
+    # --- 4. RISK SIMULATOR (RESTORED) ---
+    st.divider()
+    st.header("4. Confidence Check (Risk Simulator)")
+    st.markdown("""
+    **The Problem:** The projections above assume your Inputs (Conversion Rate, Retention) are 100% accurate. They rarely are.
+    **The Solution:** This simulator runs **1,000 scenarios**, randomly varying your inputs by ±10% to see how safe the bet really is.
+    """)
+    
+    if st.button("Run Risk Simulation", type="primary"):
+        with st.spinner("Simulating 1,000 Market Scenarios..."):
+            sims = 1000
+            volatility = 0.10 # 10% standard deviation
+            
+            # We simulate the Revenue directly based on the inputs
+            # Best Variant Data
+            v_rev_projected = best_res["Total Rev"]
+            
+            # Control Data
+            c_rev_projected = control_total_rev
+            
+            # SIMULATION LOGIC:
+            # We apply a normal distribution noise to the Revenue directly
+            # This represents volatility in Traffic, CR, and Retention collectively
+            
+            sim_v_rev = np.random.normal(v_rev_projected, v_rev_projected * volatility, sims)
+            sim_c_rev = np.random.normal(c_rev_projected, c_rev_projected * (volatility * 0.5), sims) # Control is more stable
+            
+            # Calculate Profit for each scenario
+            sim_profit = (sim_v_rev - sim_c_rev) - cost
+            
+            # Metrics
+            wins = np.sum(sim_profit > 0)
+            win_rate = (wins / sims) * 100
+            
+            r1, r2 = st.columns([1, 2])
+            
+            with r1:
+                st.markdown(f"### Probability of Profit: :blue[{win_rate:.1f}%]")
+                
+                if win_rate > 80:
+                    st.success("Verdict: **Low Risk** (Safe Bet)")
+                elif win_rate > 50:
+                    st.warning("Verdict: **Moderate Risk** (Coin Flip)")
+                else:
+                    st.error("Verdict: **High Risk** (Gamble)")
+                
+                st.write(f"**Best Case (95%):** £{np.percentile(sim_profit, 95):,.0f}")
+                st.write(f"**Worst Case (5%):** £{np.percentile(sim_profit, 5):,.0f}")
+                
+            with r2:
+                fig_risk = px.histogram(x=sim_profit, nbins=40, title=f"Profit Distribution: {best_res['Group']} vs Control",
+                                       color_discrete_sequence=['#00CC96'])
+                fig_risk.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Break Even")
+                fig_risk.update_layout(xaxis_title="Net Profit (£)", showlegend=False, height=350)
+                st.plotly_chart(fig_risk, use_container_width=True)
 
 else:
     st.info("Please input data in the tabs above to calculate projections.")
