@@ -317,7 +317,7 @@ if "Control" in group_inputs and len(group_inputs) > 1:
                 <li><b>Break Even:</b> Strategy pays for itself in Month {int(cost / (best_res['Total Rev']/24 - control_total_rev/24) ) if (best_res['Total Rev'] > control_total_rev) else 'N/A'}</li>
             </ul>
         </div>""", unsafe_allow_html=True)
-        [Image of Financial Dashboard]
+        
     else:
         st.markdown(f"""
         <div class='error-box'>
