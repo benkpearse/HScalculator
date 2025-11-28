@@ -123,7 +123,7 @@ with st.sidebar:
     st.markdown("<div class='section-header'>1. LTV Engine</div>", unsafe_allow_html=True)
     mode_selection = st.radio("Mode:", ["Marketing Mode (2-Year)", "Finance Mode (5-Year NPV)"], 
                              label_visibility="collapsed",
-                             help="Marketing: Simple 2-year sum.\nFinance: 5-year view with Discounted Cash Flow.")
+                             help="Marketing: Simple 2-year sum.\nFinance: 5-year view.")
     is_finance = "Finance" in mode_selection
     
     # STEP 2
@@ -197,7 +197,7 @@ if is_finance:
             product_ltv_map[row["Product"]] = npv_manual
 else:
     st.markdown("<div class='mode-badge marketing-mode'>🚀 MARKETING ENGINE: 2-Year Simple Model</div>", unsafe_allow_html=True)
-    st.caption("Calculating: Year 1 Price + (Year 2 Price * Global Retention). No Discounting.")
+    st.caption("Calculating: Year 1 Price + (Year 2 Price * Global Retention).")
     for p_name, p_price in PRICE_CATALOG.items():
         product_ltv_map[p_name] = p_price + (p_price * global_retention)
 
