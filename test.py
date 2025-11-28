@@ -14,17 +14,18 @@ st.markdown("""
     .big-font { font-size:24px !important; font-weight: bold; }
     .stMetric { background-color: #f8f9fa; border: 1px solid #e9ecef; }
     
+    /* Section Headers */
+    .section-header { font-size: 1.1rem; font-weight: 700; color: #333; margin-top: 25px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+    .sub-text { font-size: 0.85rem; color: #666; margin-bottom: 10px; font-style: italic; }
+    
     /* Mode Badges */
-    .mode-badge { padding: 8px 12px; border-radius: 5px; font-weight: bold; margin-bottom: 15px; display: inline-block; font-size: 0.9em; }
+    .mode-badge { padding: 5px 10px; border-radius: 4px; font-weight: bold; font-size: 0.85em; display: inline-block; margin-bottom: 10px;}
     .marketing-mode { background-color: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; }
     .finance-mode { background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
     
     /* Result Boxes */
     .success-box { padding: 20px; background-color: #d4edda; border-left: 5px solid #28a745; margin-bottom: 20px; border-radius: 4px; color: #155724; }
     .error-box { padding: 20px; background-color: #f8d7da; border-left: 5px solid #dc3545; margin-bottom: 20px; border-radius: 4px; color: #721c24; }
-    
-    /* Section Headers */
-    .section-header { font-size: 1.2rem; font-weight: 600; color: #333; margin-top: 20px; margin-bottom: 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -90,73 +91,91 @@ def parse_paste_data(raw_text):
             })
     return pd.DataFrame(parsed_rows)
 
-# --- HEADER & ONBOARDING ---
+# --- HEADER ---
 st.title("💼 Strategic ROI & LTV Calculator")
-st.markdown("### Evaluate the Financial Impact of A/B Tests")
+st.markdown("### Evaluate A/B Tests with Financial Precision")
 
-with st.expander("📘 **Start Here: Quick Guide**", expanded=True):
+with st.expander("📘 **Start Here: User Guide & Terminology**", expanded=True):
     st.markdown("""
-    **Goal:** Calculate if a new strategy (Variant) is profitable compared to the baseline (Control).
+    This tool separates **Test Data** (Past) from **Rollout Projections** (Future).
     
-    1.  **Configure (Sidebar):** Select your Mode (Marketing vs Finance) and set project costs.
-    2.  **Input Data (Tabs):** Paste your product mix (Name | Count) for each group.
-    3.  **Review (Bottom):** See the Executive Summary, Revenue Decay Charts, and Risk Simulation.
+    1.  **Sidebar Configuration:**
+        * **Engine Mode:** Choose "Marketing" for a quick 2-year view, or "Finance" for a rigorous 5-year NPV model (CFO ready).
+        * **Test Context:** Input data from your A/B test (how many people saw it, how long it ran).
+        * **Rollout Scope:** Input your expected monthly traffic if you were to launch this feature globally.
+    
+    2.  **Paste Your Data:**
+        * Copy the **Product Name** and **Sales Count** from your Excel report and paste it into the tabs below.
+        * The tool handles price lookups and typos.
+        
+    3.  **Analyze:**
+        * The tool projects revenue over 24 months, accounting for **Performance Decay** (the "novelty effect" wearing off).
+        * Use the **Risk Simulator** at the bottom to check confidence.
     """)
 
-# --- SIDEBAR: RESTRUCTURED LOGIC ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.title("⚙️ Configuration")
     
     # --- STEP 1: ENGINE ---
-    st.markdown("<div class='section-header'>1. Select Engine</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-header'>1. LTV Engine</div>", unsafe_allow_html=True)
     mode_selection = st.radio("Calculation Mode:", 
-                             ["Marketing Mode (Simple)", "Finance Mode (Advanced)"],
-                             help="**Marketing:** Uses a simple 2-Year LTV.\n**Finance:** Uses a 5-Year NPV model with granular retention settings.")
+                             ["Marketing Mode (2-Year)", "Finance Mode (5-Year NPV)"],
+                             help="Marketing: Simple sum of 2 years revenue.\nFinance: 5-year view using Net Present Value (Discounted Cash Flow).")
     is_finance = "Finance" in mode_selection
     
-    # --- STEP 2: SCOPE ---
-    st.markdown("<div class='section-header'>2. Project Scope</div>", unsafe_allow_html=True)
+    # --- STEP 2: TEST CONTEXT ---
+    st.markdown("<div class='section-header'>2. Test Context (The Past)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-text'>We use this to calculate the 'Efficiency' (Conversion Rate) of your strategy.</div>", unsafe_allow_html=True)
     
-    num_variants = st.number_input("Variants Tested", 1, 5, 1, 
-                                  help="Excluding Control, how many new versions did you test?")
+    test_days = st.number_input("Test Duration (Days)", value=14, step=1, 
+                               help="How many days did the A/B test run for?")
     
-    traffic_monthly = st.number_input("Monthly Traffic", value=10000, step=1000, 
-                                     help="How many visitors does this page/journey get per month?")
+    test_visitors_total = st.number_input("Total Test Visitors", value=5000, step=100,
+                                         help="The total number of unique users who were part of the test (Control + Variants).")
+    
+    num_variants = st.number_input("Number of Variants", 1, 5, 1, 
+                                  help="Excluding Control, how many new ideas did you test?")
+
+    # --- STEP 3: ROLLOUT PROJECTION ---
+    st.markdown("<div class='section-header'>3. Rollout Scope (The Future)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sub-text'>We use this to project how much money you will make if you launch this.</div>", unsafe_allow_html=True)
+    
+    traffic_monthly = st.number_input("Expected Monthly Traffic", value=10000, step=1000, 
+                                     help="If you roll this out, how many visitors per month will see it?")
     
     cost = st.number_input("Implementation Cost (£)", value=5000, step=500, 
-                          help="Total cost (Dev + Marketing) to fully roll out the winning strategy.")
+                          help="Total one-time cost (Dev, Design, Marketing) to launch the winning variant.")
 
-    # --- STEP 3: DYNAMICS ---
-    st.markdown("<div class='section-header'>3. Market Dynamics</div>", unsafe_allow_html=True)
+    # --- STEP 4: DYNAMICS ---
+    st.markdown("<div class='section-header'>4. Market Dynamics</div>", unsafe_allow_html=True)
     
-    st.info("📉 **Performance Decay:** A/B test wins often fade over time as the 'novelty' wears off.")
     decay_rate = st.slider("Monthly Lift Decay", 0, 20, 5, format="%d%%",
-                          help="If set to 5%, the 'gap' between Variant and Control shrinks by 5% every month.") / 100.0
+                          help="Performance usually drops after launch (Novelty Effect). If set to 5%, the 'lift' shrinks by 5% every month.") / 100.0
     
     if is_finance:
-        st.write("---")
-        st.markdown("**Finance Settings**")
-        discount_rate = st.slider("Discount Rate (WACC)", 0, 15, 5, format="%d%%", 
-                                 help="Used for Net Present Value (NPV). Future money is worth less than today's money.") / 100.0
+        st.caption("Finance: Discount Rate (WACC)")
+        discount_rate = st.slider("Discount Rate", 0, 15, 5, format="%d%%", help="Money in the future is worth less than money today. Standard is 5-10%.") / 100.0
     else:
-        st.write("---")
-        st.markdown("**Marketing Settings**")
-        global_retention = st.slider("Global Year 2 Retention", 50, 95, 80, format="%d%%",
-                                    help="Percentage of Year 1 customers who renew for Year 2.") / 100.0
+        st.caption("Marketing: Retention")
+        global_retention = st.slider("Year 2 Retention", 50, 95, 80, format="%d%%", help="Percentage of users who renew for a second year.") / 100.0
 
 # --- MAIN CONTENT ---
 
-# --- ENGINE CONFIGURATION ---
+# --- VALIDATION ---
+if test_visitors_total == 0 or traffic_monthly == 0:
+    st.error("⚠️ Traffic cannot be zero. Please update the Sidebar.")
+    st.stop()
+
+# --- ENGINE LOGIC ---
 product_ltv_map = {} 
 
 st.header("1. Financial Assumptions")
 
 if is_finance:
     st.markdown("<div class='mode-badge finance-mode'>🔓 FINANCE ENGINE: 5-Year NPV Model</div>", unsafe_allow_html=True)
-    
-    with st.expander("📊 **Edit Finance Matrix (Pricing & Retention Curves)**", expanded=True):
-        st.caption("Detailed 5-Year cash flow settings per product.")
-        
+    with st.expander("📊 **Edit Finance Matrix (Pricing & Retention Curves)**", expanded=False):
+        st.caption("This table controls the granular financial model. You can set specific retention and price hikes for years 2-5 for each product.")
         # Build Grid
         rows = []
         for p_name, p_price in PRICE_CATALOG.items():
@@ -167,25 +186,17 @@ if is_finance:
                 "Ret Y3->Y4 (%)": 90, "Price Y4 (£)": p_price * 1.15,
                 "Ret Y4->Y5 (%)": 90, "Price Y5 (£)": p_price * 1.20,
             })
-        
         matrix_df = st.data_editor(pd.DataFrame(rows), hide_index=True, height=250, use_container_width=True)
         
         # CALC NPV
         for idx, row in matrix_df.iterrows():
             cash_flows = [row["Y1 Price"]]
             cohort = 1.0
-            # Y2
-            cohort *= (row["Ret Y1->Y2 (%)"]/100)
-            cash_flows.append(cohort * row["Price Y2 (£)"])
-            # Y3
-            cohort *= (row["Ret Y2->Y3 (%)"]/100)
-            cash_flows.append(cohort * row["Price Y3 (£)"])
-            # Y4
-            cohort *= (row["Ret Y3->Y4 (%)"]/100)
-            cash_flows.append(cohort * row["Price Y4 (£)"])
-            # Y5
-            cohort *= (row["Ret Y4->Y5 (%)"]/100)
-            cash_flows.append(cohort * row["Price Y5 (£)"])
+            for year_idx in range(2, 6):
+                ret_col = f"Ret Y{year_idx-1}->Y{year_idx} (%)"
+                price_col = f"Price Y{year_idx} (£)"
+                cohort *= (row[ret_col]/100)
+                cash_flows.append(cohort * row[price_col])
             
             npv_manual = sum([cf / ((1+discount_rate)**t) for t, cf in enumerate(cash_flows)])
             product_ltv_map[row["Product"]] = npv_manual
@@ -196,57 +207,61 @@ else:
 
 # --- INPUT SECTION ---
 st.divider()
-st.header("2. Input Test Data")
-st.info("👇 **Instructions:** Paste your Excel data (Product Name | Count) into the tabs below.")
+st.header("2. Input Test Results")
+st.info("👇 **Action:** Paste the Excel Sales Data (Name | Count) for the duration of the test. We will calculate the Conversion Rate automatically.")
 
 variant_names = [f"Variant {i+1}" for i in range(num_variants)]
 tabs = st.tabs(["🅰️ Control Group"] + [f"🅱️ {v}" for v in variant_names])
 
-# Data Collection
 group_inputs = {}
+visitors_per_group_est = test_visitors_total / (num_variants + 1)
 
 for i, group in enumerate(["Control"] + variant_names):
     with tabs[i]:
         c1, c2 = st.columns([1, 2])
         with c1:
-            st.markdown(f"**{group} Input**")
+            st.markdown(f"**{group} Sales Data**")
             raw = st.text_area(f"Paste {group}", height=120, key=f"p_{group}", 
                               placeholder="Plumbing...\t50\nGas Boiler\t20", label_visibility="collapsed")
-            cr = st.number_input(f"Initial Conv. Rate (%) - {group}", value=2.0 if i==0 else 2.2, step=0.1, format="%.2f",
-                                help="The conversion rate achieved during the test period.") / 100
-        
+            
         df = parse_paste_data(raw)
         
         if not df.empty:
-            df["Unit Value (£)"] = df["Matched Policy"].map(product_ltv_map).fillna(0)
             total_sales = df["Count"].sum()
+            calculated_cr = total_sales / visitors_per_group_est
+            
+            with c1:
+                st.metric(f"Total Sales", f"{int(total_sales)}")
+                st.metric("Conversion Rate (Calc)", f"{calculated_cr*100:.2f}%", 
+                          help=f"Calculated as Total Sales / Estimated Visitors ({int(visitors_per_group_est)})")
+
+            df["Unit Value (£)"] = df["Matched Policy"].map(product_ltv_map).fillna(0)
             df["Mix"] = df["Count"] / total_sales
             blended_val = (df["Unit Value (£)"] * df["Mix"]).sum()
             
             group_inputs[group] = {
-                "CR_Initial": cr,
+                "CR_Initial": calculated_cr,
                 "LTV_Per_User": blended_val,
                 "Mix_Table": df
             }
             
             with c2:
-                st.markdown("**Mix Analysis**")
+                st.markdown("**Product Mix Analysis**")
                 st.dataframe(df[["Matched Policy", "Count", "Unit Value (£)"]], height=150, use_container_width=True, hide_index=True)
-                st.caption(f"**Blended Value (Per User):** £{blended_val:.2f}")
+                st.caption(f"**Avg Value per Sale (LTV):** £{blended_val:.2f}")
 
-# --- DECAY ENGINE CALCULATION ---
+# --- PROJECTION ENGINE ---
 st.divider()
-st.header("3. Executive Summary & Revenue Projection")
+st.header("3. Executive Summary (24 Month Rollout)")
+st.caption("This projection assumes you launch the feature to the 'Rollout Scope' traffic defined in the sidebar.")
 
 if "Control" in group_inputs and len(group_inputs) > 1:
     
     calc_results = []
-    
-    # 24 Month Projection Loop
     months = 24
     control_data = group_inputs["Control"]
     
-    # 1. Baseline (Control) Revenue Stream
+    # Control Baseline Projection
     control_monthly_rev = traffic_monthly * control_data["CR_Initial"] * control_data["LTV_Per_User"]
     control_total_rev = control_monthly_rev * months
 
@@ -258,28 +273,21 @@ if "Control" in group_inputs and len(group_inputs) > 1:
             })
             continue
             
-        # 2. Variant Revenue Stream (With Decay)
+        # Variant Projection (With Decay)
         initial_lift = data["CR_Initial"] - control_data["CR_Initial"]
         
         variant_rev_stream = []
         total_variant_rev = 0
         
         for m in range(months):
-            # Apply Decay to the LIFT only
+            # Decay the LIFT
             decayed_lift = initial_lift * ((1 - decay_rate) ** m)
-            
-            # Current Month CR
-            current_cr = control_data["CR_Initial"] + decayed_lift
-            
-            # Floor: Can't drop below Control (unless negative lift initially, but simplified here)
-            if initial_lift > 0:
-                current_cr = max(control_data["CR_Initial"], current_cr)
+            current_cr = max(control_data["CR_Initial"], control_data["CR_Initial"] + decayed_lift)
             
             monthly_rev = traffic_monthly * current_cr * data["LTV_Per_User"]
             variant_rev_stream.append(monthly_rev)
             total_variant_rev += monthly_rev
             
-        # Financials
         incremental = total_variant_rev - control_total_rev
         profit = incremental - cost
         roi = (profit/cost)*100 if cost > 0 else 0
@@ -292,33 +300,32 @@ if "Control" in group_inputs and len(group_inputs) > 1:
             "Revenue_Stream": variant_rev_stream
         })
 
-    # FIND WINNER
     best_res = max([x for x in calc_results if x["Group"] != "Control"], key=lambda x: x["Net Profit"])
     
     # NARRATIVE
     st.subheader("Recommendation")
+    horizon_label = "5-Year NPV" if is_finance else "2-Year Value"
+    
     if best_res["Net Profit"] > 0:
         st.markdown(f"""
         <div class='success-box'>
             <h3 style='margin:0'>✅ Recommended: {best_res['Group']}</h3>
-            <p>Even with a <b>{decay_rate*100:.0f}% monthly decay</b>, this strategy yields a profit.</p>
+            <p>Projected Outcome (24 Month Rollout):</p>
             <ul>
-                <li><b>Net Profit (2 Years):</b> £{best_res['Net Profit']:,.0f}</li>
+                <li><b>Net Profit ({horizon_label}):</b> £{best_res['Net Profit']:,.0f}</li>
                 <li><b>ROI:</b> {best_res['ROI']:.0f}%</li>
+                <li><b>Break Even:</b> Strategy pays for itself in Month {int(cost / (best_res['Total Rev']/24 - control_total_rev/24) ) if (best_res['Total Rev'] > control_total_rev) else 'N/A'}</li>
             </ul>
         </div>""", unsafe_allow_html=True)
-        
-
-
-
+        [Image of Financial Dashboard]
     else:
         st.markdown(f"""
         <div class='error-box'>
             <h3 style='margin:0'>🛑 Not Recommended</h3>
-            <p>Due to the <b>{decay_rate*100:.0f}% monthly decay</b>, {best_res['Group']} loses money over time.</p>
+            <p>{best_res['Group']} is projected to lose money.</p>
             <ul>
                 <li><b>Net Loss:</b> £{abs(best_res['Net Profit']):,.0f}</li>
-                <li>The initial lift fades too fast to recover the £{cost:,.0f} cost.</li>
+                <li>The lift generated is insufficient to cover the £{cost:,.0f} implementation cost given the traffic volume.</li>
             </ul>
         </div>""", unsafe_allow_html=True)
         
@@ -326,91 +333,22 @@ if "Control" in group_inputs and len(group_inputs) > 1:
     c1, c2 = st.columns([2, 1])
     
     with c1:
-        st.markdown("**Monthly Revenue Projection (£)**")
-        # Build Chart Data
+        st.markdown("**Monthly Value Generated (£)**")
+        st.caption("This shows the total LTV generated each month. Notice the decay curve.")
         chart_df = pd.DataFrame()
         chart_df["Month"] = list(range(1, 25))
-        
-        # Add Control Line
         chart_df["Control"] = calc_results[0]["Revenue_Stream"]
-        
-        # Add Variants
         for res in calc_results:
             if res["Group"] != "Control":
                 chart_df[res["Group"]] = res["Revenue_Stream"]
         
         fig = px.line(chart_df, x="Month", y=chart_df.columns[1:], 
-                     labels={"value": "Monthly Revenue (£)", "variable": "Strategy"})
-        
-        # Highlight the Decay area
-        fig.add_annotation(x=12, y=chart_df[best_res["Group"]].iloc[11],
-                          text="Decay Impact", showarrow=True, arrowhead=1)
-        
+                     labels={"value": "Value Generated (£)", "variable": "Strategy"})
         st.plotly_chart(fig, use_container_width=True)
-        st.caption("Notice how the Variant line (colored) converges toward the Control line (blue) as the lift decays.")
         
     with c2:
-        st.markdown("**Financial Summary (24 Months)**")
+        st.markdown("**Financial Summary Table**")
         summary_df = pd.DataFrame(calc_results)
         st.dataframe(summary_df[["Group", "Total Rev", "Net Profit", "ROI"]].style.format({
             "Total Rev": "£{:,.0f}", "Net Profit": "£{:,.0f}", "ROI": "{:.0f}%"
-        }), use_container_width=True, hide_index=True)
-
-    # --- 4. RISK SIMULATOR (RESTORED) ---
-    st.divider()
-    st.header("4. Confidence Check (Risk Simulator)")
-    st.markdown("""
-    **The Problem:** The projections above assume your Inputs (Conversion Rate, Retention) are 100% accurate. They rarely are.
-    **The Solution:** This simulator runs **1,000 scenarios**, randomly varying your inputs by ±10% to see how safe the bet really is.
-    """)
-    
-    if st.button("Run Risk Simulation", type="primary"):
-        with st.spinner("Simulating 1,000 Market Scenarios..."):
-            sims = 1000
-            volatility = 0.10 # 10% standard deviation
-            
-            # We simulate the Revenue directly based on the inputs
-            # Best Variant Data
-            v_rev_projected = best_res["Total Rev"]
-            
-            # Control Data
-            c_rev_projected = control_total_rev
-            
-            # SIMULATION LOGIC:
-            # We apply a normal distribution noise to the Revenue directly
-            # This represents volatility in Traffic, CR, and Retention collectively
-            
-            sim_v_rev = np.random.normal(v_rev_projected, v_rev_projected * volatility, sims)
-            sim_c_rev = np.random.normal(c_rev_projected, c_rev_projected * (volatility * 0.5), sims) # Control is more stable
-            
-            # Calculate Profit for each scenario
-            sim_profit = (sim_v_rev - sim_c_rev) - cost
-            
-            # Metrics
-            wins = np.sum(sim_profit > 0)
-            win_rate = (wins / sims) * 100
-            
-            r1, r2 = st.columns([1, 2])
-            
-            with r1:
-                st.markdown(f"### Probability of Profit: :blue[{win_rate:.1f}%]")
-                
-                if win_rate > 80:
-                    st.success("Verdict: **Low Risk** (Safe Bet)")
-                elif win_rate > 50:
-                    st.warning("Verdict: **Moderate Risk** (Coin Flip)")
-                else:
-                    st.error("Verdict: **High Risk** (Gamble)")
-                
-                st.write(f"**Best Case (95%):** £{np.percentile(sim_profit, 95):,.0f}")
-                st.write(f"**Worst Case (5%):** £{np.percentile(sim_profit, 5):,.0f}")
-                
-            with r2:
-                fig_risk = px.histogram(x=sim_profit, nbins=40, title=f"Profit Distribution: {best_res['Group']} vs Control",
-                                       color_discrete_sequence=['#00CC96'])
-                fig_risk.add_vline(x=0, line_dash="dash", line_color="red", annotation_text="Break Even")
-                fig_risk.update_layout(xaxis_title="Net Profit (£)", showlegend=False, height=350)
-                st.plotly_chart(fig_risk, use_container_width=True)
-
-else:
-    st.info("Please input data in the tabs above to calculate projections.")
+        }),
