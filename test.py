@@ -309,7 +309,7 @@ if "Control" in group_inputs and len(group_inputs) > 1:
         </div>""", unsafe_allow_html=True)
         
 
-[Image of Financial Dashboard]
+
 
     else:
         st.markdown(f"""
