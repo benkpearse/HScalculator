@@ -297,7 +297,7 @@ if "Control" in results and len(results) > 1:
         </div>""", unsafe_allow_html=True)
         
 
-[Image of Financial Dashboard]
+
  # Trigger for diagram of dashboard
     else:
         st.markdown(f"""
