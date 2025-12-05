@@ -143,7 +143,7 @@ with st.sidebar:
     st.markdown("<div class='section-header'>4. Market Dynamics</div>", unsafe_allow_html=True)
     
     # Seasonality Controls
-    use_seasonality = st.checkbox("Apply Seasonality?", value=True, help="Apply the specific heating industry seasonal curve (Jan High, Jun Low).")
+    use_seasonality = st.checkbox("Apply Seasonality?", value=True, help="Apply the specific seasonal curve.")
     if use_seasonality:
         launch_month = st.selectbox("Launch Month", MONTH_ORDER, index=0, 
                                    help="Which month does the 24-month projection start? (Affects the shape of the curve).")
